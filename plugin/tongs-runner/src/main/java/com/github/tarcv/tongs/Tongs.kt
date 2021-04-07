@@ -40,7 +40,8 @@ class Tongs(configuration: Configuration) {
         single { createTongsRunner(get()) }
     }
 
-    fun run(): Boolean {
+    @JvmOverloads
+    fun run(allowThrows: Boolean = false): Boolean {
         startKoin {
             modules(runnerModule)
         }
@@ -75,11 +76,18 @@ class Tongs(configuration: Configuration) {
                             ret
                         }
                 ) {
-                    tongsRunner.run()
+                    if (allowThrows) {
+                        tongsRunner.throwingRun()
+                    } else {
+                        tongsRunner.run()
+                    }
                 }
             } catch (e: Exception) {
-                // the exception is already logged inside withRules call
-                false
+                if (allowThrows) {
+                    throw e
+                } else {
+                    false
+                }
             } finally {
                 val duration = Utils.millisSinceNanoTime(startOfTestsMs)
                 logger.info(DurationFormatUtils.formatPeriod(0, duration,
