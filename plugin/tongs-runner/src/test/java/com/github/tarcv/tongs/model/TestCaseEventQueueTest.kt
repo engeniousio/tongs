@@ -13,12 +13,12 @@ import com.github.tarcv.tongs.api.devices.Device
 import com.github.tarcv.tongs.api.devices.Diagnostics
 import com.github.tarcv.tongs.api.devices.DisplayGeometry
 import com.github.tarcv.tongs.api.result.StackTrace
-import com.github.tarcv.tongs.pooling.StubDevice
 import com.github.tarcv.tongs.api.result.TestCaseRunResult
 import com.github.tarcv.tongs.api.run.ResultStatus
 import com.github.tarcv.tongs.api.run.TestCaseEvent
 import com.github.tarcv.tongs.api.run.aTestResult
 import com.github.tarcv.tongs.api.testcases.aTestCase
+import com.github.tarcv.tongs.pooling.StubDevice
 import org.junit.Assert
 import org.junit.Test
 import java.lang.Thread.sleep
@@ -31,8 +31,8 @@ class TestCaseEventQueueTest {
 
     @Test
     fun testNoExcludes() {
-        val test1 = createTestCaseEvent("test1", emptyList(), emptyList())
-        val test2 = createTestCaseEvent("test2", emptyList(), emptyList())
+        val test1 = createTestCaseEvent("test1", emptyList())
+        val test2 = createTestCaseEvent("test2", emptyList())
         val queue = TestCaseEventQueue(listOf(
                 test1,
                 test2
@@ -53,10 +53,10 @@ class TestCaseEventQueueTest {
 
     @Test
     fun testSimpleExclude() {
-        val test1 = createTestCaseEvent("test1", emptyList(), listOf(device1))
-        val test2 = createTestCaseEvent("test2", emptyList(), emptyList())
-        val test3 = createTestCaseEvent("test3", emptyList(), listOf(device2))
-        val test4 = createTestCaseEvent("test4", emptyList(), emptyList())
+        val test1 = createTestCaseEvent("test1", listOf(device1))
+        val test2 = createTestCaseEvent("test2", emptyList())
+        val test3 = createTestCaseEvent("test3", listOf(device2))
+        val test4 = createTestCaseEvent("test4", emptyList())
         val queue = TestCaseEventQueue(listOf(
                 test1,
                 test2,
@@ -79,8 +79,8 @@ class TestCaseEventQueueTest {
 
     @Test
     fun testWaitingForCompatibleTest() {
-        val test1 = createTestCaseEvent("test1", emptyList(), listOf(device1))
-        val test2 = createTestCaseEvent("test2", emptyList(), emptyList())
+        val test1 = createTestCaseEvent("test1", listOf(device1))
+        val test2 = createTestCaseEvent("test2", emptyList())
         val queue = TestCaseEventQueue(listOf(
                 test1
         ), mutableListOf())
@@ -121,9 +121,9 @@ private fun withTimeout(block: () -> Unit) {
     }
 }
 
-private fun createTestCaseEvent(name: String, includes: List<Device>, excludes: List<Device>): TestCaseEvent {
-    val test = aTestCase("Class", name)
-    return TestCaseEvent(test, includes, excludes)
+private fun createTestCaseEvent(name: String, excludes: List<Device>): TestCaseEvent {
+    val test = aTestCase("Class", name, null)
+    return TestCaseEvent(test, excludes)
 }
 
 private fun createStubDevice(serial: String): Device {
