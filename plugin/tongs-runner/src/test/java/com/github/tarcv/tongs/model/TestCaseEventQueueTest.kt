@@ -10,15 +10,13 @@
 package com.github.tarcv.tongs.model
 
 import com.github.tarcv.tongs.api.devices.Device
-import com.github.tarcv.tongs.api.devices.Diagnostics
-import com.github.tarcv.tongs.api.devices.DisplayGeometry
+import com.github.tarcv.tongs.api.devices.createStubDevice
 import com.github.tarcv.tongs.api.result.StackTrace
 import com.github.tarcv.tongs.api.result.TestCaseRunResult
 import com.github.tarcv.tongs.api.run.ResultStatus
 import com.github.tarcv.tongs.api.run.TestCaseEvent
 import com.github.tarcv.tongs.api.run.aTestResult
 import com.github.tarcv.tongs.api.testcases.aTestCase
-import com.github.tarcv.tongs.pooling.StubDevice
 import org.junit.Assert
 import org.junit.Test
 import java.lang.Thread.sleep
@@ -124,24 +122,4 @@ private fun withTimeout(block: () -> Unit) {
 private fun createTestCaseEvent(name: String, excludes: List<Device>): TestCaseEvent {
     val test = aTestCase("Class", name, null)
     return TestCaseEvent(test, excludes)
-}
-
-private fun createStubDevice(serial: String): Device {
-    val api = 20
-    val manufacturer = "tongs"
-    val model = "Emu-$api"
-    val stubDevice = StubDevice(serial, manufacturer, model, serial, api, "", 1)
-    return object: Device() {
-        override fun getHost(): String = "localhost"
-        override fun getSerial(): String = serial
-        override fun getManufacturer(): String = manufacturer
-        override fun getModelName(): String = model
-        override fun getOsApiLevel(): Int = api
-        override fun getLongName(): String = "${serial} ($model)"
-        override fun getDeviceInterface(): Any = stubDevice
-        override fun isTablet(): Boolean = false
-        override fun getGeometry(): DisplayGeometry? = DisplayGeometry(640)
-        override fun getSupportedVisualDiagnostics(): Diagnostics = Diagnostics.VIDEO
-        override fun getUniqueIdentifier(): Any = getSerial()
-    }
 }

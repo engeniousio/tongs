@@ -15,24 +15,26 @@ package com.github.tarcv.tongs.api.testcases
 import com.github.tarcv.tongs.api.devices.Device
 import java.util.Collections.emptyMap
 
-class TestCase @JvmOverloads constructor( // TODO: consider splitting into TestIdentifier and TestCase classes
+data class TestCase @JvmOverloads constructor( // TODO: consider splitting into TestIdentifier and TestCase classes
     val typeTag: Class<*>, // TODO: consider changing to :Enum<*>
 
+/**
+     * The package of the class containing the test case.
+     * It might not be provided by some test providers, in which case it is an empty string.
+     */
+    val testPackage: String,
+
+    val testClass: String,
+    val testMethod: String, // TODO: consider adding 'variation' property
+    val readablePath: List<String>,
+    val properties: Map<String, String> = emptyMap(), // TODO: consider changing key type to Enum or Class
+    val annotations: List<AnnotationInfo> = emptyList(), // TODO: consider replacing with properties
+
     /**
-         * The package of the class containing the test case.
-         * It might not be provided by some test providers, in which case it is an empty string.
-         */
-        val testPackage: String,
-
-        val testClass: String,
-        val testMethod: String, // TODO: consider adding 'variation' property
-        val readablePath: List<String>,
-        val properties: Map<String, String> = emptyMap(), // TODO: consider changing key type to Enum or Class
-        val annotations: List<AnnotationInfo> = emptyList(), // TODO: consider replacing with properties
-
-        includedDevices: Collection<Device>?,
-        val extra: Any = Any()
-        // TODO: add detectedOnDevices property excluded from comparison
+     * List of devices in a pool that can run this test case. Null means all devices.
+     */
+    val includedDevices: Set<Device>?,
+    val extra: Any = Any()
 ) {
     init {
         require (!(testMethod.isEmpty() || testClass.isEmpty())) {
@@ -43,10 +45,6 @@ class TestCase @JvmOverloads constructor( // TODO: consider splitting into TestI
         }
     }
 
-    /**
-     * List of devices in a pool that can run this test case. Null means all devices.
-     */
-    val includedDevices: Set<Device>? = includedDevices?.let { HashSet(it) }
     val displayName: String
         get() = readablePath.last()
 

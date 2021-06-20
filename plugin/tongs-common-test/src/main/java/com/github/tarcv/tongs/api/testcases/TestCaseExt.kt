@@ -22,6 +22,6 @@ fun aTestCase(clazz: String, method: String, includes: List<Device>? = null): Te
             "$pkg.$clazz",
             method,
             listOf("$method ($pkg.$clazz)"),
-            includedDevices = includes
+            includedDevices = includes?.toSet()
     )
 }

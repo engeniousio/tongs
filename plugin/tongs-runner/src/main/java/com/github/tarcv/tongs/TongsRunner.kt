@@ -32,6 +32,7 @@ import com.github.tarcv.tongs.runner.DeviceTestRunnerFactory
 import com.github.tarcv.tongs.runner.PoolTestRunnerFactory
 import com.github.tarcv.tongs.runner.ProgressReporter
 import com.github.tarcv.tongs.summary.SummaryGeneratorHook
+import com.github.tarcv.tongs.tests.JoiningTestProvider
 import org.koin.core.context.KoinContextHandler
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CountDownLatch
@@ -178,12 +179,10 @@ class TongsRunner(private val poolLoader: PoolLoader,
             val loaderSupplier = KoinContextHandler.get().get<TestSuiteLoaderSupplier>()
             return loaderSupplier
                 .supply(pool)
-                .flatMap { it.loadTestSuite() }
-
-                .asReversed() // later test cases override first ones
-                .distinct()
-                .asReversed()
-
+                .let {
+                    JoiningTestProvider(it, pool)
+                }
+                .loadTestSuite()
                 .map {
                     TestCaseEvent(
                         it,

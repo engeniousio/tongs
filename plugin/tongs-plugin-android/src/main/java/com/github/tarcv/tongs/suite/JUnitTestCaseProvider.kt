@@ -20,7 +20,6 @@ import com.github.tarcv.tongs.api.testcases.TestCaseProviderContext
 import com.github.tarcv.tongs.device.clearLogcat
 import com.github.tarcv.tongs.model.AndroidDevice
 import com.github.tarcv.tongs.runner.AndroidTestRunFactory
-import com.github.tarcv.tongs.runner.IRemoteAndroidTestRunnerFactory
 import com.github.tarcv.tongs.runner.JsonInfoDecorder
 import com.github.tarcv.tongs.runner.TestInfo
 import com.github.tarcv.tongs.runner.listeners.LogcatReceiver
@@ -39,7 +38,6 @@ import java.nio.file.Files
 class JUnitTestCaseProvider(
     private val context: TestCaseProviderContext,
     private val testRunFactory: AndroidTestRunFactory,
-    private val remoteAndroidTestRunnerFactory: IRemoteAndroidTestRunnerFactory,
     private val apkTestInfoReader: ApkTestInfoReader
 ) : TestCaseProvider {
     private val logger = LoggerFactory.getLogger(JUnitTestCaseProvider::class.java)
@@ -138,7 +136,7 @@ class JUnitTestCaseProvider(
                             } catch (e: InterruptedException) {
                                 throw e
                             } catch (e: Exception) {
-                                logger.warn("Failed to collect test cases from ${device.name}", e)
+                                logger.warn("Didn't collect test cases from ${device.name}", e)
                                 throw e
                             }
                         }
@@ -153,7 +151,8 @@ class JUnitTestCaseProvider(
                         } else {
                             collectedInfoResults.last().exceptionOrNull()
                         }
-                        throw RuntimeException("Failed to collect any test cases from the devices", lastCause)
+                        logger.warn("Didn't collect any test cases using Android Debug Bridge", lastCause)
+                        return@let emptyList<TestCase>()
                     }
 
                     collectedInfos.forEach {
@@ -247,7 +246,7 @@ class JUnitTestCaseProvider(
                             info.readablePath,
                             emptyMap(),
                             info.annotations,
-                            devicesInfo[identifier]
+                            devicesInfo[identifier]?.toSet()
                     )
                 }
     }

@@ -15,7 +15,6 @@ package com.github.tarcv.tongs.suite
 
 import com.github.tarcv.tongs.api.testcases.TestCaseProviderContext
 import com.github.tarcv.tongs.api.testcases.TestCaseProviderFactory
-import com.github.tarcv.tongs.injector.runner.RemoteAndroidTestRunnerFactoryInjector
 import com.github.tarcv.tongs.injector.runner.TestRunFactoryInjector
 
 class JUnitTestCaseProviderFactory: TestCaseProviderFactory<JUnitTestCaseProvider> {
@@ -23,7 +22,6 @@ class JUnitTestCaseProviderFactory: TestCaseProviderFactory<JUnitTestCaseProvide
         return arrayOf(JUnitTestCaseProvider(
             context,
             TestRunFactoryInjector.testRunFactory(context.configuration),
-            RemoteAndroidTestRunnerFactoryInjector.remoteAndroidTestRunnerFactory(context.configuration),
             ApkTestInfoReader()
         ))
     }
