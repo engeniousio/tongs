@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 TarCV
+ * Copyright 2021 TarCV
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
  *
@@ -13,33 +13,34 @@ package com.github.tarcv.tongs.suite
 import com.android.ddmlib.CollectingOutputReceiver
 import com.android.ddmlib.logcat.LogCatMessage
 import com.android.ddmlib.testrunner.TestIdentifier
-import com.github.tarcv.tongs.api.run.TestCaseEvent
 import com.github.tarcv.tongs.api.testcases.NoTestCasesFoundException
 import com.github.tarcv.tongs.api.testcases.TestCase
-import com.github.tarcv.tongs.api.testcases.TestSuiteLoader
-import com.github.tarcv.tongs.api.testcases.TestSuiteLoaderContext
+import com.github.tarcv.tongs.api.testcases.TestCaseProvider
+import com.github.tarcv.tongs.api.testcases.TestCaseProviderContext
 import com.github.tarcv.tongs.device.clearLogcat
 import com.github.tarcv.tongs.model.AndroidDevice
 import com.github.tarcv.tongs.runner.AndroidTestRunFactory
-import com.github.tarcv.tongs.runner.IRemoteAndroidTestRunnerFactory
 import com.github.tarcv.tongs.runner.JsonInfoDecorder
 import com.github.tarcv.tongs.runner.TestInfo
 import com.github.tarcv.tongs.runner.listeners.LogcatReceiver
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
-import java.util.*
 
-public class JUnitTestSuiteLoader(
-        private val context: TestSuiteLoaderContext,
-        private val testRunFactory: AndroidTestRunFactory,
-        private val remoteAndroidTestRunnerFactory: IRemoteAndroidTestRunnerFactory,
-        private val apkTestInfoReader: ApkTestInfoReader
-) : TestSuiteLoader {
-    private val logger = LoggerFactory.getLogger(JUnitTestSuiteLoader::class.java)
+class JUnitTestCaseProvider(
+    private val context: TestCaseProviderContext,
+    private val testRunFactory: AndroidTestRunFactory,
+    private val apkTestInfoReader: ApkTestInfoReader
+) : TestCaseProvider {
+    private val logger = LoggerFactory.getLogger(JUnitTestCaseProvider::class.java)
 
     companion object {
         const val logcatWaiterSleep: Long = 2500
@@ -124,23 +125,36 @@ public class JUnitTestSuiteLoader(
     }
 
     @Throws(NoTestCasesFoundException::class)
-    override fun loadTestSuite(): Collection<TestCaseEvent> = runBlocking {
+    override fun loadTestSuite(): Collection<TestCase> = runBlocking {
         context.pool.devices
                 .filterIsInstance(AndroidDevice::class.java) // TODO: handle other types of devices
                 .map { device ->
                     async {
-                        try {
-                            collectTestsFromLogOnlyRun(device)
-                        } catch (e: InterruptedException) {
-                            throw e
-                        } catch (e: Exception) {
-                            // TODO: specific exception
-                            throw RuntimeException("Failed to collect test cases from ${device.name}", e)
+                        kotlin.runCatching {
+                            try {
+                                collectTestsFromLogOnlyRun(device)
+                            } catch (e: InterruptedException) {
+                                throw e
+                            } catch (e: Exception) {
+                                logger.warn("Didn't collect test cases from ${device.name}", e)
+                                throw e
+                            }
                         }
                     }
                 }
                 .awaitAll()
-                .let { collectedInfos ->
+                .let { collectedInfoResults ->
+                    val collectedInfos = collectedInfoResults.mapNotNull { it.getOrNull() }
+                    if (collectedInfos.isEmpty()) {
+                        val lastCause = if (collectedInfoResults.isEmpty()) {
+                            null
+                        } else {
+                            collectedInfoResults.last().exceptionOrNull()
+                        }
+                        logger.warn("Didn't collect any test cases using Android Debug Bridge", lastCause)
+                        return@let emptyList<TestCase>()
+                    }
+
                     collectedInfos.forEach {
                         if (!it.hasOnDeviceLibrary) {
                             logger.warn("Instrumented tests on ${it.device} are linked without 'ondevice' library." +
@@ -207,7 +221,7 @@ public class JUnitTestSuiteLoader(
         return localPath.toFile()
     }
 
-    private fun finalizeTestInformation(collectedInfos: List<CollectedInfo>, annotationInfos: Map<TestIdentifier, TestInfo>): Collection<TestCaseEvent> {
+    private fun finalizeTestInformation(collectedInfos: List<CollectedInfo>, annotationInfos: Map<TestIdentifier, TestInfo>): Collection<TestCase> {
         val devicesInfo = collectedInfos
                 .asSequence()
                 .map { it.device to it.tests }
@@ -224,20 +238,15 @@ public class JUnitTestSuiteLoader(
 
         return annotationInfos
                 .map { (identifier, info) ->
-                    val testCase = TestCase(
+                    TestCase(
                             ApkTestCase::class.java,
                             info.`package`,
                             identifier.className,
                             identifier.testName,
                             info.readablePath,
                             emptyMap(),
-                            info.annotations
-                    )
-                    TestCaseEvent(
-                            testCase,
-                            devicesInfo[identifier] ?: emptyList(),
-                            emptyList(),
-                            0
+                            info.annotations,
+                            devicesInfo[identifier]?.toSet()
                     )
                 }
     }
@@ -281,12 +290,12 @@ public class JUnitTestSuiteLoader(
             device: AndroidDevice,
             withOnDeviceLib: Boolean): Pair<List<LogCatMessage>, TestCollectingListener.Result> = withContext(Dispatchers.IO) {
         val testCollectingListener = TestCollectingListener()
-        val logCatCollector: LogcatReceiver = LogcatReceiver(device)
+        val logCatCollector = LogcatReceiver(device)
         val testRun = testRunFactory.createCollectingRun(
                 device, context.pool, testCollectingListener, withOnDeviceLib)
         try {
             clearLogcat(device.deviceInterface)
-            logCatCollector.start(this@JUnitTestSuiteLoader.javaClass.simpleName)
+            logCatCollector.start(this@JUnitTestCaseProvider.javaClass.simpleName)
 
             testRun.execute()
 

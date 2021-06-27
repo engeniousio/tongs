@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 TarCV
+ * Copyright 2021 TarCV
  * Copyright 2014 Shazam Entertainment Limited
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
@@ -13,21 +13,30 @@
  */
 package com.github.tarcv.tongs.runner
 
+import com.github.tarcv.tongs.Configuration
 import com.github.tarcv.tongs.api.devices.Device
 import com.github.tarcv.tongs.api.devices.Pool
 import com.github.tarcv.tongs.api.result.Delegate
 import com.github.tarcv.tongs.api.result.StackTrace
 import com.github.tarcv.tongs.api.result.TestCaseFileManager
 import com.github.tarcv.tongs.api.result.TestCaseRunResult
-import com.github.tarcv.tongs.api.run.*
+import com.github.tarcv.tongs.api.run.DeviceRunRuleContext
+import com.github.tarcv.tongs.api.run.DeviceRunRuleFactory
+import com.github.tarcv.tongs.api.run.ResultStatus
+import com.github.tarcv.tongs.api.run.TestCaseEvent
+import com.github.tarcv.tongs.api.run.TestCaseRunRuleAfterArguments
+import com.github.tarcv.tongs.api.run.TestCaseRunRuleContext
+import com.github.tarcv.tongs.api.run.TestCaseRunRuleFactory
+import com.github.tarcv.tongs.api.run.TestCaseRunnerArguments
 import com.github.tarcv.tongs.injector.ActualConfiguration
-import com.github.tarcv.tongs.injector.ConfigurationInjector
 import com.github.tarcv.tongs.injector.RuleManagerFactory
-import com.github.tarcv.tongs.injector.listeners.TestRunListenersTongsFactoryInjector
-import com.github.tarcv.tongs.injector.system.FileManagerInjector
 import com.github.tarcv.tongs.injector.withRulesWithoutAfter
 import com.github.tarcv.tongs.model.TestCaseEventQueue
+import com.github.tarcv.tongs.runner.listeners.TestRunListenersFactoryTongs
+import com.github.tarcv.tongs.system.io.FileManager
 import com.github.tarcv.tongs.system.io.TestCaseFileManagerImpl
+import org.koin.core.context.KoinContextHandler
+import org.koin.java.KoinJavaComponent.get
 import org.slf4j.LoggerFactory
 import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
@@ -58,7 +67,7 @@ class DeviceTestRunner(private val pool: Pool,
                             val startTimestampUtc = Instant.now()
                             try {
                                 runEvent(testCaseEvent, startTimestampUtc, progressReporter, queueOfTestsInPool)
-                                        .validateRunResult(testCaseEvent, startTimestampUtc, "Something")
+                                        .fixRunResult(testCaseEvent, startTimestampUtc)
                                         .copy(endTimestampUtc = Instant.now())
                             } catch (e: Exception) {
                                 fatalErrorResult(testCaseEvent, e, startTimestampUtc)
@@ -83,17 +92,21 @@ class DeviceTestRunner(private val pool: Pool,
             progressReporter: ProgressReporter,
             queueOfTestsInPool: TestCaseEventQueue
     ): TestCaseRunResult {
-        val testCaseFileManager: TestCaseFileManager = TestCaseFileManagerImpl(FileManagerInjector.fileManager(), pool, device, testCaseEvent.testCase)
-        val configuration = ConfigurationInjector.configuration()
+        val fileManager by KoinContextHandler.get().inject<FileManager>()
+        val testCaseFileManager: TestCaseFileManager =
+     TestCaseFileManagerImpl(fileManager, pool, device, testCaseEvent.testCase)
+        val configuration = get(Configuration::class.java)
 
-        val testRunListeners = TestRunListenersTongsFactoryInjector.testRunListenersTongsFactory(configuration).createTongsListners(
-                testCaseEvent,
-                device,
-                pool,
-                progressReporter,
-                queueOfTestsInPool,
-                configuration.tongsIntegrationTestRunType)
-                .toList()
+        val testRunListenersTongsFactory by KoinContextHandler.get().inject<TestRunListenersFactoryTongs>()
+        val testRunListeners = testRunListenersTongsFactory.createTongsListners(
+            testCaseEvent,
+            device,
+            pool,
+            progressReporter,
+            queueOfTestsInPool,
+            configuration.tongsIntegrationTestRunType
+        )
+            .toList()
 
         val ruleManager = ruleManagerFactory.create(
                 TestCaseRunRuleFactory::class.java,
@@ -131,7 +144,7 @@ class DeviceTestRunner(private val pool: Pool,
                                         additionalProperties = combineProperties(executeContext.testCaseEvent, it.additionalProperties)
                                 )
                             }
-                            .validateRunResult(testCaseEvent, startTimestampUtc, "Test case runner")
+                            .fixRunResult(testCaseEvent, startTimestampUtc)
                 }
         )
 
@@ -149,10 +162,9 @@ class DeviceTestRunner(private val pool: Pool,
 
                         rule.after(args)
                         args.result
-                                .validateRunResult(
-                                        testCaseEvent,
-                                        startTimestampUtc,
-                                        "Rule ${rule.javaClass.name}"
+                                .fixRunResult(
+                                    testCaseEvent,
+                                    startTimestampUtc
                                 )
                     } catch (e: Exception) {
                         val header = "Exception ${inRuleText} (after)"
@@ -181,29 +193,16 @@ class DeviceTestRunner(private val pool: Pool,
                 emptyList())
     }
 
-    private fun TestCaseRunResult.validateRunResult(
-            testCaseEvent: TestCaseEvent,
-            startTimestampUtc: Instant,
-            changer: String
-    ): TestCaseRunResult {
-        val testCase = testCaseEvent.testCase
-        if (pool != this@DeviceTestRunner.pool
-                || device != this@DeviceTestRunner.device
-                || this.testCase != testCase
-                || this.startTimestampUtc != startTimestampUtc) {
-            throw RuntimeException(
-                    "$changer attempted to change pool, device, testCase or startTimestampUtc field of a run result")
-        }
-        if (this.totalFailureCount < testCaseEvent.totalFailureCount) {
-            throw RuntimeException("$changer attempted to decrease totalFailureCount")
-        }
-        val isFailed = this.status == ResultStatus.ERROR || this.status == ResultStatus.FAIL
-        if (isFailed && this.totalFailureCount < testCaseEvent.totalFailureCount + 1) {
-            throw RuntimeException("$changer attempted to set wrong totalFailureCount for a failure or error result")
-        }
-
-        return this
-    }
+    private fun TestCaseRunResult.fixRunResult(
+        testCaseEvent: TestCaseEvent,
+        startTimestampUtc: Instant
+    ): TestCaseRunResult = copy(
+        pool = this@DeviceTestRunner.pool,
+        device = this@DeviceTestRunner.device,
+        testCase = testCaseEvent.testCase,
+        startTimestampUtc = startTimestampUtc,
+        baseTotalFailureCount = baseTotalFailureCount.coerceAtLeast(testCaseEvent.totalFailureCount)
+    )
 
     private fun runUntilResult(context: TestCaseRunRuleContext): TestCaseRunResult {
         return try {
